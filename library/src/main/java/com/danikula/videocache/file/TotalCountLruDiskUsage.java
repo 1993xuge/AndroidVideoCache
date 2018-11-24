@@ -9,6 +9,7 @@ import java.io.File;
  */
 public class TotalCountLruDiskUsage extends LruDiskUsage {
 
+    // 文件的最大数量
     private final int maxCount;
 
     public TotalCountLruDiskUsage(int maxCount) {

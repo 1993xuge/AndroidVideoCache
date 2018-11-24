@@ -26,6 +26,7 @@ public abstract class LruDiskUsage implements DiskUsage {
     }
 
     private void touchInBackground(File file) throws IOException {
+        // 更新文件的最新修改时间
         Files.setLastModifiedNow(file);
         List<File> files = Files.getLruListFiles(file.getParentFile());
         trim(files);
@@ -33,12 +34,17 @@ public abstract class LruDiskUsage implements DiskUsage {
 
     protected abstract boolean accept(File file, long totalSize, int totalCount);
 
+    /**
+     * 遍历文件，将超出要求的文件，删除
+     */
     private void trim(List<File> files) {
         long totalSize = countTotalSize(files);
         int totalCount = files.size();
         for (File file : files) {
+            // 根据size或count，判断是否接收这个文件
             boolean accepted = accept(file, totalSize, totalCount);
             if (!accepted) {
+                // 不接收，则删除文件
                 long fileSize = file.length();
                 boolean deleted = file.delete();
                 if (deleted) {
@@ -52,6 +58,9 @@ public abstract class LruDiskUsage implements DiskUsage {
         }
     }
 
+    /**
+     * 计算这些文件的总长度
+     */
     private long countTotalSize(List<File> files) {
         long totalSize = 0;
         for (File file : files) {

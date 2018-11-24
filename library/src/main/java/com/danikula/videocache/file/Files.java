@@ -35,21 +35,34 @@ class Files {
         }
     }
 
+    /**
+     * 使用Lru算法，对directory中的文件进行排序。最近一次更新的文件在最前面。
+     * @param directory
+     * @return
+     */
     static List<File> getLruListFiles(File directory) {
         List<File> result = new LinkedList<>();
         File[] files = directory.listFiles();
         if (files != null) {
             result = Arrays.asList(files);
+            // 对文件按照 LastModified 进行排序，从大到小，即最近一次更新的文件在最前面
             Collections.sort(result, new LastModifiedComparator());
         }
         return result;
     }
 
+    /**
+     * 更新文件的最新修改时间
+     * @param file
+     * @throws IOException
+     */
     static void setLastModifiedNow(File file) throws IOException {
         if (file.exists()) {
             long now = System.currentTimeMillis();
-            boolean modified = file.setLastModified(now); // on some devices (e.g. Nexus 5) doesn't work
+            // on some devices (e.g. Nexus 5) doesn't work
+            boolean modified = file.setLastModified(now);
             if (!modified) {
+                // 强制修改文件
                 modify(file);
                 if (file.lastModified() < now) {
                     // NOTE: apparently this is a known issue (see: http://stackoverflow.com/questions/6633748/file-lastmodified-is-never-what-was-set-with-file-setlastmodified)
@@ -67,13 +80,18 @@ class Files {
         }
 
         RandomAccessFile accessFile = new RandomAccessFile(file, "rwd");
+        // 移动到文件末尾
         accessFile.seek(size - 1);
+        // 从文件的“文件指针”当前位置，读取一个8位的字节。字节是从0-255。
         byte lastByte = accessFile.readByte();
         accessFile.seek(size - 1);
         accessFile.write(lastByte);
         accessFile.close();
     }
 
+    /**
+     * 删除并且重新创建文件
+     */
     private static void recreateZeroSizeFile(File file) throws IOException {
         if (!file.delete() || !file.createNewFile()) {
             throw new IOException("Error recreate zero-size file " + file);

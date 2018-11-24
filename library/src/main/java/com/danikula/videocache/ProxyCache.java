@@ -40,6 +40,7 @@ class ProxyCache {
         ProxyCacheUtils.assertBuffer(buffer, offset, length);
 
         while (!cache.isCompleted() && cache.available() < (offset + length) && !stopped) {
+            //关键是这一步，异步去读取网络数据
             readSourceAsync();
             waitForSourceData();
             checkReadSourceErrorsCount();
@@ -75,6 +76,9 @@ class ProxyCache {
         }
     }
 
+    /**
+     * 可以看到这一个个同步方法，然后开启一个异步线程去读取网络资源
+     */
     private synchronized void readSourceAsync() throws ProxyCacheException {
         boolean readingInProgress = sourceReaderThread != null && sourceReaderThread.getState() != Thread.State.TERMINATED;
         if (!stopped && !cache.isCompleted() && !readingInProgress) {
@@ -115,6 +119,9 @@ class ProxyCache {
     protected void onCachePercentsAvailableChanged(int percentsAvailable) {
     }
 
+    /**
+     * 核心逻辑在这里
+     */
     private void readSource() {
         long sourceAvailable = -1;
         long offset = 0;

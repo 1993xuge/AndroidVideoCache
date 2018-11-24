@@ -2,6 +2,7 @@ package com.danikula.videocache;
 
 import android.content.Context;
 import android.net.Uri;
+import android.util.Log;
 
 import com.danikula.videocache.file.DiskUsage;
 import com.danikula.videocache.file.FileNameGenerator;
@@ -53,11 +54,15 @@ import static com.danikula.videocache.Preconditions.checkNotNull;
  */
 public class HttpProxyCacheServer {
 
+    private static final String TAG = HttpProxyCacheServer.class.getSimpleName();
     private static final Logger LOG = LoggerFactory.getLogger("HttpProxyCacheServer");
     private static final String PROXY_HOST = "127.0.0.1";
 
     private final Object clientsLock = new Object();
     private final ExecutorService socketProcessor = Executors.newFixedThreadPool(8);
+    /**
+     * 每一个 url 对应一个 HttpProxyCacheServerClients
+     */
     private final Map<String, HttpProxyCacheServerClients> clientsMap = new ConcurrentHashMap<>();
     private final ServerSocket serverSocket;
     private final int port;
@@ -72,14 +77,28 @@ public class HttpProxyCacheServer {
     private HttpProxyCacheServer(Config config) {
         this.config = checkNotNull(config);
         try {
+            // 首先设置  127.0.0.1的本地代理服务socket  用于响应 播放器的多媒体数据请求业务
             InetAddress inetAddress = InetAddress.getByName(PROXY_HOST);
+            // 建立一个端口号随机的ServerSocket，用于接收视频播放器的http请求
+            // 0：指定服务器要绑定的端口（服务器要监听的端口），0表示由操作系统来为服务器分配一个任意可用的端口。
+            // 8：指定客户连接请求队列的长度
+            // inetAddress：指定服务器要绑定的IP地址。
             this.serverSocket = new ServerSocket(0, 8, inetAddress);
+            // 保存Server代理服务器端口号
             this.port = serverSocket.getLocalPort();
+            // 确保所有这类型的请求都不会走系统代理
             IgnoreHostProxySelector.install(PROXY_HOST, port);
+
             CountDownLatch startSignal = new CountDownLatch(1);
+            // WaitRequestsRunnable中，新建一个死循环线程用于处理Socket连接
             this.waitConnectionThread = new Thread(new WaitRequestsRunnable(startSignal));
             this.waitConnectionThread.start();
-            startSignal.await(); // freeze thread, wait for server starts
+
+            // 当前线程会被阻塞，直到CountDownLatch中的值为0。
+            // 当 等待客户端请求的线程开启后，await方法返回
+            startSignal.await(); // freeze thread, wait for server starts 用于等待Sever线程完成
+
+            //
             this.pinger = new Pinger(PROXY_HOST, port);
             LOG.info("Proxy cache server started. Is it alive? " + isAlive());
         } catch (IOException | InterruptedException e) {
@@ -104,6 +123,7 @@ public class HttpProxyCacheServer {
     }
 
     /**
+     * 将流数据源url地址转化为本地的代理服务器url，传递给播放器使用
      * Returns url that wrap original url and should be used for client (MediaPlayer, ExoPlayer, etc).
      * <p>
      * If parameter {@code allowCachedFileUri} is {@code true} and file for this url is fully cached
@@ -115,10 +135,14 @@ public class HttpProxyCacheServer {
      */
     public String getProxyUrl(String url, boolean allowCachedFileUri) {
         if (allowCachedFileUri && isCached(url)) {
+            // 如果已经缓存过 这个 url，则获取缓存的文件，并根据这个文件生成新的url
             File cacheFile = getCacheFile(url);
+            // 更新一下文件最后的修改时间，这是为了防止时间太久被Lru缓存清除
             touchFileSafely(cacheFile);
+            // 如果url对应的媒体文件已经全部被缓存，则返回这个文件的Uri地址给播放器播放即可
             return Uri.fromFile(cacheFile).toString();
         }
+        // 如果代理服务器在运行，就返回一个ProxyUrl，否则还是返回真实的Url给播放器播放
         return isAlive() ? appendToProxyUrl(url) : url;
     }
 
@@ -185,6 +209,9 @@ public class HttpProxyCacheServer {
         return pinger.ping(3, 70);   // 70+140+280=max~500ms
     }
 
+    /**
+     * ProxyUrl 生成逻辑非常简单，将原Url拼接到一个  http://127.0.0.1:xxx/Url 即可
+     */
     private String appendToProxyUrl(String url) {
         return String.format(Locale.US, "http://%s:%d/%s", PROXY_HOST, port, ProxyCacheUtils.encode(url));
     }
@@ -214,9 +241,14 @@ public class HttpProxyCacheServer {
 
     private void waitForRequest() {
         try {
+            // 如果当前线程 不被中断，则循环一致下去
             while (!Thread.currentThread().isInterrupted()) {
+                // 阻塞线程，等待客户端的请求
+                // 当 客户端 向服务器Socket发起请求时，accept方法会返回给客户端一个socket
                 Socket socket = serverSocket.accept();
+                Log.d(TAG, "waitForRequest:   Accept new socket " + socket);
                 LOG.debug("Accept new socket " + socket);
+                // 通过线程池处理每一个Socket连接
                 socketProcessor.submit(new SocketProcessorRunnable(socket));
             }
         } catch (IOException e) {
@@ -224,15 +256,28 @@ public class HttpProxyCacheServer {
         }
     }
 
+    /**
+     * 处理 请求的Socket
+     *
+     * @param socket
+     */
     private void processSocket(Socket socket) {
         try {
+            // 从服务器的Socket获取输入流，然后创建一个GetRequest
             GetRequest request = GetRequest.read(socket.getInputStream());
             LOG.debug("Request to cache proxy:" + request);
+            Log.d(TAG, "processSocket: request = " + request);
+            // 对request.uri 进行接 解码
             String url = ProxyCacheUtils.decode(request.uri);
+            Log.d(TAG, "processSocket: url = " + url);
             if (pinger.isPingRequest(url)) {
+                // 如果是视频播放器发出了一个ping请求，直接返回 200 ok
                 pinger.responseToPing(socket);
             } else {
+                // 通过url获取一个处理的Client
+                // 通过url获取（如果没有就 new 一个client）
                 HttpProxyCacheServerClients clients = getClients(url);
+                // 通过Client处理请求request，socket
                 clients.processRequest(request, socket);
             }
         } catch (SocketException e) {
@@ -242,15 +287,25 @@ public class HttpProxyCacheServer {
         } catch (ProxyCacheException | IOException e) {
             onError(new ProxyCacheException("Error processing request", e));
         } finally {
+            // 关闭socket
             releaseSocket(socket);
             LOG.debug("Opened connections: " + getClientsCount());
         }
     }
 
+    /**
+     * 通过url获取（如果没有就 new 一个client）
+     *
+     * @param url
+     * @return
+     * @throws ProxyCacheException
+     */
     private HttpProxyCacheServerClients getClients(String url) throws ProxyCacheException {
         synchronized (clientsLock) {
+            // 从clientsMap中获取
             HttpProxyCacheServerClients clients = clientsMap.get(url);
             if (clients == null) {
+                // clientsMap中没有与该url对应的HttpProxyCacheServerClients对象，则new一个新的，并将其加入到clientsMap中。
                 clients = new HttpProxyCacheServerClients(url, config);
                 clientsMap.put(url, clients);
             }
@@ -312,6 +367,9 @@ public class HttpProxyCacheServer {
         LOG.error("HttpProxyCacheServer error", e);
     }
 
+    /**
+     * 该Runnable的作用是：开启一个死循环，等待客户端连接
+     */
     private final class WaitRequestsRunnable implements Runnable {
 
         private final CountDownLatch startSignal;
@@ -327,8 +385,14 @@ public class HttpProxyCacheServer {
         }
     }
 
+    /**
+     * 处理客户端的Socket连接
+     */
     private final class SocketProcessorRunnable implements Runnable {
 
+        /**
+         * 代理服务器Socket向客户端返回的Socket
+         */
         private final Socket socket;
 
         public SocketProcessorRunnable(Socket socket) {
@@ -346,19 +410,32 @@ public class HttpProxyCacheServer {
      */
     public static final class Builder {
 
+        // 512M
         private static final long DEFAULT_MAX_SIZE = 512 * 1024 * 1024;
 
         private File cacheRoot;
         private FileNameGenerator fileNameGenerator;
         private DiskUsage diskUsage;
+        /**
+         * SourceInfo 存储的类对象
+         */
         private SourceInfoStorage sourceInfoStorage;
+        //
         private HeaderInjector headerInjector;
 
         public Builder(Context context) {
+            // 初始化 SourceInfo 存储的 类对象
             this.sourceInfoStorage = SourceInfoStorageFactory.newSourceInfoStorage(context);
+
+            // 获取默认的可用缓存目录
             this.cacheRoot = StorageUtils.getIndividualCacheDirectory(context);
+
+            // 缓存文件的最大size是 512M
             this.diskUsage = new TotalSizeLruDiskUsage(DEFAULT_MAX_SIZE);
+
+            //
             this.fileNameGenerator = new Md5FileNameGenerator();
+            //
             this.headerInjector = new EmptyHeadersInjector();
         }
 

@@ -1,6 +1,7 @@
 package com.danikula.videocache;
 
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -17,29 +18,52 @@ import static com.danikula.videocache.Preconditions.checkNotNull;
  * @author Alexey Danilov (danikula@gmail.com).
  */
 class GetRequest {
-
+    private static final String TAG = "GetRequest";
     private static final Pattern RANGE_HEADER_PATTERN = Pattern.compile("[R,r]ange:[ ]?bytes=(\\d*)-");
     private static final Pattern URL_PATTERN = Pattern.compile("GET /(.*) HTTP");
 
+    /**
+     * Get请求的Url
+     */
     public final String uri;
+
+    /**
+     * Get请求数据的长度
+     */
     public final long rangeOffset;
+
+    /**
+     * 是否完整
+     */
     public final boolean partial;
 
     public GetRequest(String request) {
         checkNotNull(request);
+        // 获取数据的 偏移量
         long offset = findRangeOffset(request);
         this.rangeOffset = Math.max(0, offset);
+
         this.partial = offset >= 0;
+
         this.uri = findUri(request);
     }
 
+    /**
+     * 读取 输入流中的数据，并将其包装成 GetRequest
+     *
+     * @param inputStream - 数据的输入流
+     * @return
+     * @throws IOException
+     */
     public static GetRequest read(InputStream inputStream) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
         StringBuilder stringRequest = new StringBuilder();
         String line;
-        while (!TextUtils.isEmpty(line = reader.readLine())) { // until new line (headers ending)
+        // until new line (headers ending)
+        while (!TextUtils.isEmpty(line = reader.readLine())) {
             stringRequest.append(line).append('\n');
         }
+        Log.d(TAG, "   read: stringRequest = " + stringRequest.toString());
         return new GetRequest(stringRequest.toString());
     }
 

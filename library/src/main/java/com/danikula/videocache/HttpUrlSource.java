@@ -72,6 +72,11 @@ public class HttpUrlSource implements Source {
         return sourceInfo.length;
     }
 
+    /**
+     * 打开一个Http请求连接
+     * @param offset offset in bytes for source.
+     * @throws ProxyCacheException
+     */
     @Override
     public void open(long offset) throws ProxyCacheException {
         try {
@@ -116,6 +121,9 @@ public class HttpUrlSource implements Source {
         }
     }
 
+    /**
+     * 从Http连接的的InputStream里面读取数据到buffer里面
+     */
     @Override
     public int read(byte[] buffer) throws ProxyCacheException {
         if (inputStream == null) {
@@ -152,6 +160,14 @@ public class HttpUrlSource implements Source {
         }
     }
 
+    /**
+     * 这里是通过HttpURLConnection实现了Http连接，注意这里处理了重定向的可能
+     * @param offset
+     * @param timeout
+     * @return
+     * @throws IOException
+     * @throws ProxyCacheException
+     */
     private HttpURLConnection openConnection(long offset, int timeout) throws IOException, ProxyCacheException {
         HttpURLConnection connection;
         boolean redirected;

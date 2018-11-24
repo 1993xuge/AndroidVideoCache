@@ -36,15 +36,20 @@ final class HttpProxyCacheServerClients {
     }
 
     public void processRequest(GetRequest request, Socket socket) throws ProxyCacheException, IOException {
+        // 在处理Request之前，判断有没有生成HttpProxyCache实例
         startProcessRequest();
         try {
             clientsCount.incrementAndGet();
+            // 真正处理请求的逻辑交给HttpProxyCache
             proxyCache.processRequest(request, socket);
         } finally {
             finishProcessRequest();
         }
     }
 
+    /**
+     * 检测proxyCache是否为null，是则创建一个新的。
+     */
     private synchronized void startProcessRequest() throws ProxyCacheException {
         proxyCache = proxyCache == null ? newHttpProxyCache() : proxyCache;
     }

@@ -35,10 +35,13 @@ class HttpProxyCache extends ProxyCache {
         this.listener = cacheListener;
     }
 
+    /**
+     * url的请求交给HttpProxyCache 处理
+     */
     public void processRequest(GetRequest request, Socket socket) throws IOException, ProxyCacheException {
         OutputStream out = new BufferedOutputStream(socket.getOutputStream());
         String responseHeaders = newResponseHeaders(request);
-        out.write(responseHeaders.getBytes("UTF-8"));
+        out.write(responseHeaders.getBytes("UTF-8"));//先写入Http响应头
 
         long offset = request.rangeOffset;
         if (isUseCache(request)) {
@@ -48,6 +51,7 @@ class HttpProxyCache extends ProxyCache {
         }
     }
 
+    //判断是否使用文件缓存
     private boolean isUseCache(GetRequest request) throws ProxyCacheException {
         long sourceLength = source.length();
         boolean sourceLengthKnown = sourceLength > 0;
@@ -73,6 +77,9 @@ class HttpProxyCache extends ProxyCache {
                 .toString();
     }
 
+    /**
+     * 从offset位置开始不断读取缓存文件的数据到buffer然后写入OutputStream
+     */
     private void responseWithCache(OutputStream out, long offset) throws ProxyCacheException, IOException {
         byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
         int readBytes;
@@ -83,12 +90,17 @@ class HttpProxyCache extends ProxyCache {
         out.flush();
     }
 
+    /**
+     * 从offset位置开始不断读取网络的数据到buffer然后写入OutputStream
+     */
     private void responseWithoutCache(OutputStream out, long offset) throws ProxyCacheException, IOException {
         HttpUrlSource newSourceNoCache = new HttpUrlSource(this.source);
         try {
+            // HttpUrlSource 处理网络请求， 打开一个Http请求连接
             newSourceNoCache.open((int) offset);
             byte[] buffer = new byte[DEFAULT_BUFFER_SIZE];
             int readBytes;
+            // 这里不断的从网络的Http连接的InputStream里面读取数据到buffer，然后在写入OutputStream
             while ((readBytes = newSourceNoCache.read(buffer)) != -1) {
                 out.write(buffer, 0, readBytes);
                 offset += readBytes;

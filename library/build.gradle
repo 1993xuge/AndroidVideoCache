@@ -12,12 +12,12 @@ apply plugin: 'idea'
 apply plugin: 'bintray-release'
 
 android {
-    compileSdkVersion 23
+    compileSdkVersion 24
     buildToolsVersion '25.0.2'
 
     defaultConfig {
         minSdkVersion 9
-        targetSdkVersion 23
+        targetSdkVersion 22
         versionCode 21
         versionName '2.7.0'
     }

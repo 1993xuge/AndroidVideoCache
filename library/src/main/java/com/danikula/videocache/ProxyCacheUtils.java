@@ -51,16 +51,28 @@ public class ProxyCacheUtils {
         return preview;
     }
 
+    /**
+     * 对Url的字符内容 进行编码
+     * @param url
+     * @return
+     */
     static String encode(String url) {
         try {
+            // URLEncoder : 包含一个encode(String s,String enc)静态方法，它可以将普通字符串转换成application/x-www-form-urlencoded MIME字符串。
             return URLEncoder.encode(url, "utf-8");
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException("Error encoding url", e);
         }
     }
 
+    /**
+     * 对Url的字符内容 进行解码
+     * @param url
+     * @return
+     */
     static String decode(String url) {
         try {
+            // URLDecoder : 包含一个decode的静态方法。可以将application/x-www-form-urlencoded MIME字符串转成普通字符串
             return URLDecoder.decode(url, "utf-8");
         } catch (UnsupportedEncodingException e) {
             throw new RuntimeException("Error decoding url", e);

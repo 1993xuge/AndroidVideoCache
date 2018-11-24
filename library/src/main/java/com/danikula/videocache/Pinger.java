@@ -1,5 +1,7 @@
 package com.danikula.videocache;
 
+import android.util.Log;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,13 +33,19 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
  */
 
 class Pinger {
-
+    private static final String TAG = "Pinger";
     private static final Logger LOG = LoggerFactory.getLogger("Pinger");
     private static final String PING_REQUEST = "ping";
     private static final String PING_RESPONSE = "ping ok";
 
     private final ExecutorService pingExecutor = Executors.newSingleThreadExecutor();
+
+    /**
+     * host name
+     */
     private final String host;
+
+    /** 端口 **/
     private final int port;
 
     Pinger(String host, int port) {
@@ -54,6 +62,7 @@ class Pinger {
         while (attempts < maxAttempts) {
             try {
                 Future<Boolean> pingFuture = pingExecutor.submit(new PingCallable());
+                // Future get方法 获取任务的执行结果，该方法会阻塞线程直到任务结束
                 boolean pinged = pingFuture.get(timeout, MILLISECONDS);
                 if (pinged) {
                     return true;
@@ -63,9 +72,12 @@ class Pinger {
             } catch (InterruptedException | ExecutionException e) {
                 LOG.error("Error pinging server due to unexpected error", e);
             }
+            // 重试次数增加
             attempts++;
+            // 超时时间加倍
             timeout *= 2;
         }
+        //  ping 失败
         String error = String.format(Locale.US, "Error pinging server (attempts: %d, max timeout: %d). " +
                         "If you see this message, please, report at https://github.com/danikula/AndroidVideoCache/issues/134. " +
                         "Default proxies are: %s"
@@ -87,14 +99,28 @@ class Pinger {
         return PING_REQUEST.equals(request);
     }
 
+    /**
+     * 向 Socket 的OutPutStream中写入 数据。
+     * 此处写入了  HTTP/1.1 200 OK
+     *
+     * @param socket
+     * @throws IOException
+     */
     void responseToPing(Socket socket) throws IOException {
         OutputStream out = socket.getOutputStream();
         out.write("HTTP/1.1 200 OK\n\n".getBytes());
         out.write(PING_RESPONSE.getBytes());
     }
 
+    /**
+     * ???
+     * @return
+     * @throws ProxyCacheException
+     */
     private boolean pingServer() throws ProxyCacheException {
+        //
         String pingUrl = getPingUrl();
+        Log.d(TAG, this.hashCode() + "   pingServer: pingUrl = " + pingUrl);
         HttpUrlSource source = new HttpUrlSource(pingUrl);
         try {
             byte[] expectedResponse = PING_RESPONSE.getBytes();
